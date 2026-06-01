@@ -1,48 +1,110 @@
-FROM alpine:3.19
+#
+# firefox Dockerfile
+#
+# https://github.com/jlesage/docker-firefox
+#
 
-# Enable community repo
-RUN echo "http://dl-cdn.alpinelinux.org/alpine/v3.19/community" >> /etc/apk/repositories
+# Build the membarrier check tool.
+FROM alpine:3.14 AS membarrier
+WORKDIR /tmp
+COPY membarrier_check.c .
+RUN apk --no-cache add build-base linux-headers
+RUN gcc -static -o membarrier_check membarrier_check.c
+RUN strip membarrier_check
 
-# Install packages
-RUN apk add --no-cache \
-    firefox \
-    tigervnc \
-    xvfb \
-    x11vnc \
-    fluxbox \
-    xrandr \
-    bash \
-    git \
-    python3 \
-    websockify
+# Pull base image.
+FROM jlesage/baseimage-gui:alpine-3.23-v4.11.3
 
-# Clone noVNC (full source, includes vendor/ and core/)
-RUN git clone --depth 1 https://github.com/novnc/noVNC.git /opt/novnc && \
-    git clone --depth 1 https://github.com/novnc/websockify /opt/novnc/utils/websockify
+# Docker image version is provided via build arg.
+ARG DOCKER_IMAGE_VERSION=
 
-# Overwrite index.html with your minimal version
-COPY index.html /opt/novnc/index.html
+# Define software versions.
+ARG FIREFOX_VERSION=145.0-r0
+#ARG PROFILE_CLEANER_VERSION=2.36
 
-# Create directories
-RUN mkdir -p /config /home/user/.vnc
+# Define software download URLs.
+#ARG PROFILE_CLEANER_URL=https://github.com/graysky2/profile-cleaner/raw/v${PROFILE_CLEANER_VERSION}/common/profile-cleaner.in
 
-ENV DISPLAY=:0 \
-    RESOLUTION=1280x720 \
-    HOME=/config
+# Define working directory.
+WORKDIR /tmp
 
-# Create startup script
-RUN cat <<'EOF' > /start.sh
-#!/bin/bash
-Xvfb $DISPLAY -screen 0 ${RESOLUTION}x24 &
-sleep 2
-fluxbox &
-x11vnc -display $DISPLAY -forever -shared -nopw &
-/opt/novnc/utils/novnc_proxy --vnc localhost:5900 --listen 5800 --web /opt/novnc &
-firefox --kiosk --no-remote --disable-infobars https://www.google.com
-EOF
+# Install Firefox.
+RUN \
+#    add-pkg --repository http://dl-cdn.alpinelinux.org/alpine/edge/main \
+#            --repository http://dl-cdn.alpinelinux.org/alpine/edge/community \
+#            --upgrade firefox=${FIREFOX_VERSION}
+     add-pkg firefox=${FIREFOX_VERSION}
 
-RUN chmod +x /start.sh
+# Install extra packages.
+RUN \
+    ARCH="$(apk --print-arch)" && \
+    if [ "$ARCH" = "x86" ] || [ "$ARCH" = "x86_64" ]; then \
+        libva_intel_driver="libva-intel-driver"; \
+    fi && \
+    add-pkg \
+        # WebGL support.
+        mesa-dri-gallium \
+        mesa-va-gallium \
+        $libva_intel_driver \
+        # Audio support.
+        libpulse \
+        # Desktop notification support.
+        libnotify \
+        # Icons used by folder/file selection window (when saving as).
+        adwaita-icon-theme \
+        # The following package is used to send key presses to the X process.
+        xdotool \
+        # A font is needed.
+        font-dejavu \
+        && \
+    # Remove unneeded icons.
+    find /usr/share/icons/Adwaita -type d -mindepth 1 -maxdepth 1 -not -name 16x16 -not -name scalable -exec rm -rf {} ';' && \
+    true
 
-EXPOSE 5800
+# Install profile-cleaner.
+#RUN \
+#    add-pkg --virtual build-dependencies curl && \
+#    curl -# -L -o /usr/bin/profile-cleaner {$PROFILE_CLEANER_URL} && \
+#    sed-patch 's/@VERSION@/'${PROFILE_CLEANER_VERSION}'/' /usr/bin/profile-cleaner && \
+#    chmod +x /usr/bin/profile-cleaner && \
+#    add-pkg \
+#        bash \
+#        file \
+#        coreutils \
+#        bc \
+#        parallel \
+#        sqlite \
+#        && \
+#    # Cleanup.
+#    del-pkg build-dependencies && \
+#    rm -rf /tmp/* /tmp/.[!.]*
 
-CMD ["/start.sh"]
+# Generate and install favicons.
+RUN \
+    APP_ICON_URL=https://github.com/jlesage/docker-templates/raw/master/jlesage/images/firefox-icon.png && \
+    install_app_icon.sh "$APP_ICON_URL"
+
+# Add files.
+COPY rootfs/ /
+COPY --from=membarrier /tmp/membarrier_check /usr/bin/
+
+# Set internal environment variables.
+RUN \
+    set-cont-env APP_NAME "Firefox" && \
+    set-cont-env APP_VERSION "$FIREFOX_VERSION" && \
+    set-cont-env DOCKER_IMAGE_VERSION "$DOCKER_IMAGE_VERSION" && \
+    true
+
+# Set public environment variables.
+ENV \
+    FF_OPEN_URL= \
+    FF_KIOSK=0 \
+    FF_CUSTOM_ARGS=
+
+# Metadata.
+LABEL \
+      org.label-schema.name="firefox" \
+      org.label-schema.description="Docker container for Firefox" \
+      org.label-schema.version="${DOCKER_IMAGE_VERSION:-unknown}" \
+      org.label-schema.vcs-url="https://github.com/jlesage/docker-firefox" \
+      org.label-schema.schema-version="1.0"

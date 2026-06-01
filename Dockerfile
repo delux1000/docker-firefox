@@ -1,9 +1,9 @@
 FROM alpine:3.19
 
-# Enable community repository for some packages
+# Enable community repository for noVNC etc.
 RUN echo "http://dl-cdn.alpinelinux.org/alpine/v3.19/community" >> /etc/apk/repositories
 
-# Install packages
+# Install all required packages
 RUN apk add --no-cache \
     firefox \
     tigervnc \
@@ -13,29 +13,31 @@ RUN apk add --no-cache \
     x11vnc \
     fluxbox \
     xrandr \
-    bash \
-    && rm -rf /var/cache/apk/*
+    bash
 
-# Setup directories
+# Create directories
 RUN mkdir -p /config /home/user/.vnc
 
-# Environment
+# Environment variables
 ENV DISPLAY=:0 \
     RESOLUTION=1280x720 \
     HOME=/config
 
 # Copy your custom noVNC index.html
-# (Make sure index.html is in the same directory as Dockerfile)
 COPY index.html /usr/share/novnc/index.html
 
-# Create startup script
-RUN echo '#!/bin/bash\n\
-Xvfb $DISPLAY -screen 0 ${RESOLUTION}x24 &\n\
-sleep 2\n\
-fluxbox &\n\
-x11vnc -display $DISPLAY -forever -shared -nopw &\n\
-websockify --web=/usr/share/novnc 5800 localhost:5900 &\n\
-firefox --kiosk --no-remote --disable-infobars https://www.google.com' > /start.sh && chmod +x /start.sh
+# Create startup script using a heredoc (reliable)
+RUN cat <<'EOF' > /start.sh
+#!/bin/bash
+Xvfb $DISPLAY -screen 0 ${RESOLUTION}x24 &
+sleep 2
+fluxbox &
+x11vnc -display $DISPLAY -forever -shared -nopw &
+websockify --web=/usr/share/novnc 5800 localhost:5900 &
+firefox --kiosk --no-remote --disable-infobars https://www.google.com
+EOF
+
+RUN chmod +x /start.sh
 
 EXPOSE 5800
 

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Firefox Kiosk</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+            background: #000;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <script src="/vendor/pako.js"></script>
+    <script src="/vendor/browser-es-module-loader.js"></script>
+    <script src="/core/rfb.js"></script>
+    <script>
+        (function() {
+            const canvas = document.getElementById('canvas');
+            const host = window.location.hostname;
+            const port = window.location.port;
+            const rfb = new RFB(canvas, `ws://${host}:${port}/websockify`, {
+                credentials: { password: '' },
+                shared: true
+            });
+        })();
+    </script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-#
+
 # firefox Dockerfile
 #
 # https://github.com/jlesage/docker-firefox
